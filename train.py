@@ -24,7 +24,7 @@ def restore_scale(bias, slope, data):
 
     return bias, slope
 
-def main(input, output, learning_rate, epochs, graph, verbose):
+def main(input, output, learning_rate, epochs, minimum_improvement, graph, verbose):
     try:
         data_content = numpy.loadtxt(input, dtype=float, delimiter=',', skiprows=1)
     except FileNotFoundError as e:
@@ -50,11 +50,13 @@ def main(input, output, learning_rate, epochs, graph, verbose):
 
     bias = 0
     slope = 0
+    mse = 0
 
-    for _ in range(0, epochs):
+    for i in range(0, epochs):
         tmp_bias = 0
         tmp_slope = 0
 
+        prev_mse = mse
         mse = 0
 
         for values in normalized_data:
@@ -66,36 +68,48 @@ def main(input, output, learning_rate, epochs, graph, verbose):
             tmp_slope -= (current_predict - values[1]) * values[0]
 
         mse = mse / len(normalized_data)
+        improvement = prev_mse - mse
 
         bias += learning_rate * (tmp_bias / data_size)
         slope += learning_rate * (tmp_slope / data_size)
 
+        if verbose:
+            tmp_bias, tmp_slope = restore_scale(bias, slope, data_content)
+            print(f"  Epoch #{i + 1}\nBias = {tmp_bias}, slope = {tmp_slope}, MSE = {mse}")
+            if i > 0:
+                print(f"MSE improved by {improvement}")
+        
+        if i > 0 and abs(improvement) < minimum_improvement:
+            print(f"Reached minimum improvement; MSE improvement on epoch #{i} is {improvement}")
+            break
+
     #De-normalize bias and slope
     bias, slope = restore_scale(bias, slope, data_content)
 
-    print(f"Bias: {bias}\nSlope: {slope}")
+    print(f"  Final values:\nBias: {bias}\nSlope: {slope}\nMean squared error: {mse}")
 
     numpy.savetxt(output, numpy.array([bias, slope]).T)
 
-    
-    #plot
-    pyplot.plot(data_content[:, 0], data_content[:, 1], "o")
-    pyplot.axline([0, bias], slope=slope, color="r")
-    pyplot.title("Linear regression")
-    pyplot.xlabel("km")
-    pyplot.ylabel("price")
-    pyplot.show()
+    if graph:
+        #plot
+        pyplot.plot(data_content[:, 0], data_content[:, 1], "o")
+        pyplot.axline([0, bias], slope=slope, color="r")
+        pyplot.title("Linear regression")
+        pyplot.xlabel("km")
+        pyplot.ylabel("price")
+        pyplot.show()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-i", "--input", default="datasets/data.csv", help="the file containing data to perform a linear regression on")
     parser.add_argument("-o", "--output", default="weight.lreg", help="the destination file to create containing the weights and bias")
-    parser.add_argument("-r", "--learning-rate", type=float, default=0.05, help="learning rate in the linear regression")
-    parser.add_argument("-e", "--epochs", type=int, default=1000, help="the number of iterations to perform gradient descent for")
+    parser.add_argument("-l", "--learning-rate", type=float, default=0.05, help="learning rate in the linear regression")
+    parser.add_argument("-e", "--epochs", type=int, default=1000, help="the maximum number of iterations to perform gradient descent for")
+    parser.add_argument("-m", "--minimum-improvement", type=float, default=0, help="if set, stops running once mse improvement between epochs is less than the given value")
     parser.add_argument("-g", "--graph", help="display a graph with the data points and the resulting function", action="store_true")
     parser.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
 
     args = parser.parse_args()
 
-    main(args.input, args.output, args.learning_rate, args.epochs, args.graph, args.verbose)
+    main(args.input, args.output, args.learning_rate, args.epochs, args.minimum_improvement, args.graph, args.verbose)
