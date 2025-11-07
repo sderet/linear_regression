@@ -24,26 +24,32 @@ def restore_scale(bias, slope, data):
 
     return bias, slope
 
+def calculate_mse(bias, slope, values, data_content):
+    bias, slope = restore_scale(bias, slope, data_content)
+    current_predict = bias + (slope * values[0])
+    return (current_predict - values[1]) ** 2
+
 def main(input, output, learning_rate, epochs, minimum_improvement, graph, verbose):
     try:
-        data_content = numpy.loadtxt(input, dtype=float, delimiter=',', skiprows=1)
+        if epochs < 1:
+            raise ValueError(f"total epochs cannot be less than 1; {epochs} was provided")
+
+        if learning_rate > 1:
+            raise ValueError(f"learning rate cannot exceed 1.0; {learning_rate} was provided")
+        
+        data_content = numpy.atleast_2d(numpy.loadtxt(input, dtype=float, delimiter=',', skiprows=1))
+        data_size = len(data_content)
+        if (data_size <= 1):
+            raise ValueError(f"at least 2 datapoints are expected; {data_size} was provided")
     except FileNotFoundError as e:
-        print(f"{input} not found.")
-        if verbose:
-            print(f"Exiting...")
+        print(f"Error: {e}\nExiting...")
         exit()
     except ValueError as e:
-        print(f"{input} is not properly formatted.")
-        if verbose:
-            print(f"{e}\nExiting...")
+        print(f"Error: {e}\nExiting...")
         exit()
     except UserWarning as e:
-        print(f"{input} is not properly formatted. Is it one line or less?")
-        if verbose:
-            print(f"{e}\nExiting...")
+        print(f"Error: {e}\nExiting...")
         exit()
-
-    data_size = len(data_content)
 
     # Necessary to prevent data becoming too big to do math on
     normalized_data = normalize(numpy.array(data_content))
@@ -51,18 +57,21 @@ def main(input, output, learning_rate, epochs, minimum_improvement, graph, verbo
     bias = 0
     slope = 0
     mse = 0
+    if graph > 1:
+        blist = []
+        slist = []
 
-    for i in range(0, epochs):
+    for current_epoch in range(0, epochs):
         tmp_bias = 0
         tmp_slope = 0
 
         prev_mse = mse
         mse = 0
 
-        for values in normalized_data:
-            current_predict = bias + (slope * values[0])
+        for i, values in enumerate(normalized_data):
+            mse += calculate_mse(bias, slope, data_content[i], data_content)
 
-            mse += (current_predict - values[1]) ** 2
+            current_predict = bias + (slope * values[0])
 
             tmp_bias -= (current_predict - values[1])
             tmp_slope -= (current_predict - values[1]) * values[0]
@@ -73,17 +82,23 @@ def main(input, output, learning_rate, epochs, minimum_improvement, graph, verbo
         bias += learning_rate * (tmp_bias / data_size)
         slope += learning_rate * (tmp_slope / data_size)
 
+
+        tmp_bias, tmp_slope = restore_scale(bias, slope, data_content)
+
+        if graph > 1:
+            blist.append(tmp_bias)
+            slist.append(tmp_slope)
+
         if verbose:
-            tmp_bias, tmp_slope = restore_scale(bias, slope, data_content)
-            print(f"  Epoch #{i + 1}\nBias = {tmp_bias}, slope = {tmp_slope}, MSE = {mse}")
-            if i > 0:
+            print(f"  Epoch #{current_epoch + 1}\nBias = {tmp_bias}, slope = {tmp_slope}, MSE = {mse}")
+            if current_epoch > 0:
                 print(f"MSE improved by {improvement}")
-        
-        if i > 0 and abs(improvement) < minimum_improvement:
-            print(f"Reached minimum improvement; MSE improvement on epoch #{i} is {improvement}")
+
+        if current_epoch > 0 and improvement >= 0 and improvement < minimum_improvement:
+            print(f"Reached minimum improvement; MSE improvement on epoch #{current_epoch + 1} is {improvement}")
             break
 
-    #De-normalize bias and slope
+    # De-normalize bias and slope
     bias, slope = restore_scale(bias, slope, data_content)
 
     print(f"  Final values:\nBias: {bias}\nSlope: {slope}\nMean squared error: {mse}")
@@ -91,23 +106,38 @@ def main(input, output, learning_rate, epochs, minimum_improvement, graph, verbo
     numpy.savetxt(output, numpy.array([bias, slope]).T)
 
     if graph:
-        #plot
         pyplot.plot(data_content[:, 0], data_content[:, 1], "o")
-        pyplot.axline([0, bias], slope=slope, color="r")
+        ax = pyplot.axline([0, bias], slope=slope, color="r")
         pyplot.title("Linear regression")
         pyplot.xlabel("km")
         pyplot.ylabel("price")
-        pyplot.show()
+
+        if graph > 1:
+            pyplot.ion()
+
+            for i in range(len(slist)):
+                if not pyplot.get_fignums():
+                    exit()
+                pyplot.title(f"Linear regression (epoch #{i + 1})")
+                ax.set_xy1([0, blist[i]])
+                ax.set_slope(slist[i])
+                # Take 5 seconds no matter how many epochs there are
+                pyplot.pause(5 / current_epoch)
+
+            pyplot.ioff()
+            pyplot.show()
+        else:
+            pyplot.show()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-i", "--input", default="datasets/data.csv", help="the file containing data to perform a linear regression on")
     parser.add_argument("-o", "--output", default="weight.lreg", help="the destination file to create containing the weights and bias")
-    parser.add_argument("-l", "--learning-rate", type=float, default=0.05, help="learning rate in the linear regression")
+    parser.add_argument("-l", "--learning-rate", type=float, default=0.2, help="learning rate in the linear regression")
     parser.add_argument("-e", "--epochs", type=int, default=1000, help="the maximum number of iterations to perform gradient descent for")
     parser.add_argument("-m", "--minimum-improvement", type=float, default=0, help="if set, stops running once mse improvement between epochs is less than the given value")
-    parser.add_argument("-g", "--graph", help="display a graph with the data points and the resulting function", action="store_true")
+    parser.add_argument("-g", "--graph", help="display a graph with the data points and the resulting function. If used more than once, will display the function at every epoch in sequence", action='count', default=0)
     parser.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
 
     args = parser.parse_args()
