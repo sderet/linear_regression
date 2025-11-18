@@ -1,7 +1,6 @@
 import argparse
 import math
 import numpy
-import matplotlib.pyplot as pyplot
 import warnings
 
 warnings.filterwarnings("error")
@@ -106,11 +105,13 @@ def main(input, output, learning_rate, epochs, minimum_improvement, graph, verbo
     numpy.savetxt(output, numpy.array([bias, slope]).T)
 
     if graph:
+        import matplotlib.pyplot as pyplot
+
         pyplot.plot(data_content[:, 0], data_content[:, 1], "o")
         ax = pyplot.axline([0, bias], slope=slope, color="r")
         pyplot.title("Linear regression")
-        pyplot.xlabel("km")
-        pyplot.ylabel("price")
+        #pyplot.xlabel("km")
+        #pyplot.ylabel("price")
 
         if graph > 1:
             pyplot.ion()
